@@ -178,14 +178,19 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
     
     const makeRequest = async () => {
       try {
+        const requestHeaders = {
+          'User-Agent': config.userAgent
+        };
+        // 豆瓣图片防盗链：需要添加 Referer 头
+        if (targetUrl.includes('doubanio.com') || targetUrl.includes('douban.com')) {
+          requestHeaders['Referer'] = 'https://movie.douban.com/';
+        }
         return await axios({
           method: 'get',
           url: targetUrl,
           responseType: 'stream',
           timeout: config.timeout,
-          headers: {
-            'User-Agent': config.userAgent
-          }
+          headers: requestHeaders
         });
       } catch (error) {
         if (retries < maxRetries) {
@@ -223,7 +228,8 @@ app.get('/proxy/:encodedUrl', async (req, res) => {
 });
 
 app.use(express.static(path.join(__dirname), {
-  maxAge: config.cacheMaxAge
+  maxAge: config.debug ? 0 : config.cacheMaxAge,
+  etag: !config.debug
 }));
 
 app.use((err, req, res, next) => {

@@ -1,5 +1,5 @@
 // 全局变量
-let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["tyyszy","dyttzy", "bfzy", "ruyi"]'); // 默认选中资源
+let selectedAPIs = JSON.parse(localStorage.getItem('selectedAPIs') || '["ffzy","bfzy", "lzzy", "hongniu"]'); // 默认选中资源
 let customAPIs = JSON.parse(localStorage.getItem('customAPIs') || '[]'); // 存储自定义API列表
 
 // 添加当前播放的集数索引
@@ -13,7 +13,35 @@ let episodesReversed = false;
 
 // 页面初始化
 document.addEventListener('DOMContentLoaded', function () {
-    // 初始化API复选框
+    // 已知有效的内置API源列表（用于迁移旧的无效配置）
+    const VALID_BUILTIN_APIS = ['ffzy', 'lzzy', 'wujin', 'hongniu', 'bfzy', 'zy360'];
+    const CURRENT_CONFIG_VERSION = '2'; // 配置版本号，修改默认值时递增
+
+    // 先设置默认值，再初始化复选框（修复初始化顺序）
+    const configVersion = localStorage.getItem('configVersion');
+    if (!localStorage.getItem('hasInitializedDefaults') || configVersion !== CURRENT_CONFIG_VERSION) {
+        // 检查现有 selectedAPIs 是否包含无效源，如果是则重置
+        const needsMigration = selectedAPIs.some(id =>
+            !id.startsWith('custom_') && !VALID_BUILTIN_APIS.includes(id)
+        );
+
+        if (!localStorage.getItem('hasInitializedDefaults') || needsMigration) {
+            selectedAPIs = ["ffzy", "bfzy", "lzzy", "hongniu"];
+            localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
+        }
+
+        // 默认选中过滤开关（仅首次）
+        if (!localStorage.getItem('hasInitializedDefaults')) {
+            localStorage.setItem('yellowFilterEnabled', 'true');
+            localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
+            localStorage.setItem('doubanEnabled', 'true');
+        }
+
+        localStorage.setItem('hasInitializedDefaults', 'true');
+        localStorage.setItem('configVersion', CURRENT_CONFIG_VERSION);
+    }
+
+    // 初始化API复选框（在默认值设置之后）
     initAPICheckboxes();
 
     // 初始化自定义API列表
@@ -24,23 +52,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
     // 渲染搜索历史
     renderSearchHistory();
-
-    // 设置默认API选择（如果是第一次加载）
-    if (!localStorage.getItem('hasInitializedDefaults')) {
-        // 默认选中资源
-        selectedAPIs = ["tyyszy", "bfzy", "dyttzy", "ruyi"];
-        localStorage.setItem('selectedAPIs', JSON.stringify(selectedAPIs));
-
-        // 默认选中过滤开关
-        localStorage.setItem('yellowFilterEnabled', 'true');
-        localStorage.setItem(PLAYER_CONFIG.adFilteringStorage, 'true');
-
-        // 默认启用豆瓣功能
-        localStorage.setItem('doubanEnabled', 'true');
-
-        // 标记已初始化默认值
-        localStorage.setItem('hasInitializedDefaults', 'true');
-    }
 
     // 设置黄色内容过滤器开关初始状态
     const yellowFilterToggle = document.getElementById('yellowFilterToggle');
@@ -481,18 +492,37 @@ function removeCustomApi(index) {
 }
 
 function toggleSettings(e) {
-    const settingsPanel = document.getElementById('settingsPanel');
-    if (!settingsPanel) return;
-
-    if (settingsPanel.classList.contains('show')) {
-        settingsPanel.classList.remove('show');
-    } else {
-        settingsPanel.classList.add('show');
+    // 强化的密码保护校验 - 防止绕过
+    try {
+        if (window.ensurePasswordProtection) {
+            window.ensurePasswordProtection();
+        } else {
+            if (window.isPasswordProtected && window.isPasswordVerified) {
+                if (window.isPasswordProtected() && !window.isPasswordVerified()) {
+                    showPasswordModal && showPasswordModal();
+                    return;
+                }
+            }
+        }
+    } catch (error) {
+        console.warn('Password protection check failed:', error.message);
+        return;
     }
 
     if (e) {
         e.preventDefault();
         e.stopPropagation();
+    }
+
+    const settingsPanel = document.getElementById('settingsPanel');
+    if (!settingsPanel) return;
+
+    settingsPanel.classList.toggle('show');
+
+    // 如果历史记录面板是打开的，则关闭它
+    const historyPanel = document.getElementById('historyPanel');
+    if (historyPanel && historyPanel.classList.contains('show')) {
+        historyPanel.classList.remove('show');
     }
 }
 
@@ -746,16 +776,21 @@ async function search() {
             // 修改为水平卡片布局，图片在左侧，文本在右侧，并优化样式
             const hasCover = item.vod_pic && item.vod_pic.startsWith('http');
 
+            // 构建代理URL作为图片加载失败的回退（带鉴权参数）
+            const authHash = window.__ENV__?.PASSWORD || '';
+            const authParam = authHash ? `?auth=${encodeURIComponent(authHash)}&t=${Date.now()}` : '';
+            const coverProxyUrl = PROXY_URL + encodeURIComponent(item.vod_pic || '') + authParam;
+
             return `
-                <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md" 
+                <div class="card-hover bg-[#111] rounded-lg overflow-hidden cursor-pointer transition-all hover:scale-[1.02] h-full shadow-sm hover:shadow-md"
                      onclick="showDetails('${safeId}','${safeName}','${sourceCode}')" ${apiUrlAttr}>
                     <div class="flex h-full">
                         ${hasCover ? `
                         <div class="relative flex-shrink-0 search-card-img-container">
-                            <img src="${item.vod_pic}" alt="${safeName}" 
-                                 class="h-full w-full object-cover transition-transform hover:scale-110" 
-                                 onerror="this.onerror=null; this.src='https://via.placeholder.com/300x450?text=无封面'; this.classList.add('object-contain');" 
-                                 loading="lazy">
+                            <img src="${item.vod_pic}" alt="${safeName}"
+                                 class="h-full w-full object-cover transition-transform hover:scale-110"
+                                 onerror="this.onerror=null; this.src='${coverProxyUrl}'; this.onerror=function(){this.onerror=null; this.style.background='#191919'; this.alt='无封面';};"
+                                 loading="lazy" referrerpolicy="no-referrer">
                             <div class="absolute inset-0 bg-gradient-to-r from-black/30 to-transparent"></div>
                         </div>` : ''}
                         
