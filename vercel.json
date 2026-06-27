@@ -1,4 +1,7 @@
 {
+  "framework": null,
+  "buildCommand": "",
+  "outputDirectory": ".",
   "rewrites": [
     {
       "source": "/proxy/:path*",
@@ -9,16 +12,12 @@
       "destination": "/index.html"
     },
     {
-      "source": "/player.html",
-      "destination": "/player.html"
+      "source": "/watch",
+      "destination": "/watch.html"
     },
     {
       "source": "/player.html/:path*",
       "destination": "/player.html"
-    },
-    {
-      "source": "/:path*",
-      "destination": "/:path*"
     }
   ]
 }
